@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import torch
 import cherry as ch
 from cherry._utils import _min_size, _istensorable
 from .base import Wrapper
@@ -76,6 +77,8 @@ class Runner(Wrapper):
 
     def reset(self, *args, **kwargs):
         self._current_state = self.env.reset(*args, **kwargs)
+        self._current_state = self._current_state.swapaxes(1, 3)
+        self._current_state = torch.from_numpy(self._current_state).float()
         self._needs_reset = False
         return self._current_state
 
@@ -136,14 +139,15 @@ class Runner(Wrapper):
                         msg = 'get_action should return 1 or 2 values.'
                         raise NotImplementedError(msg)
             old_state = self._current_state
-            state, reward, done, _ = self.env.step(action)
+            state, reward, done, _ = self.env.step(action.numpy())
             if not self.is_vectorized and done:
                 collected_episodes += 1
                 self._needs_reset = True
             elif self.is_vectorized:
                 collected_episodes += sum(done)
             replay.append(old_state, action, reward, state, done, **info)
-            self._current_state = state
+            self._current_state = state.swapaxes(1, 3)
+            self._current_state = torch.from_numpy(self._current_state).float()
             if render:
                 self.env.render()
             collected_steps += 1
