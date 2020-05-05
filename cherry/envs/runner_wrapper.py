@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import torch
 import cherry as ch
 from cherry._utils import _min_size, _istensorable
 from .base import Wrapper
@@ -87,7 +88,8 @@ class Runner(Wrapper):
             get_action,
             steps=None,
             episodes=None,
-            render=False):
+            render=False,
+            device=torch.device('cpu')):
         """
         Runner wrapper's run method.
         """
@@ -114,7 +116,8 @@ class Runner(Wrapper):
             if self._needs_reset:
                 self.reset()
             info = {}
-            action = get_action(self._current_state)
+            # Pass state to device for the model forward pass
+            action = get_action(self._current_state.to(device))
             if isinstance(action, tuple):
                 skip_unpack = False
                 if self.is_vectorized:
