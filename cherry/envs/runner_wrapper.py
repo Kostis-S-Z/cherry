@@ -6,6 +6,7 @@ from .base import Wrapper
 from .utils import is_vectorized
 
 from collections.abc import Iterable
+from collections import defaultdict
 
 
 def flatten_episodes(replay, episodes, num_workers):
@@ -28,7 +29,11 @@ def flatten_episodes(replay, episodes, num_workers):
         fields = set(sars._Transition__fields) - {'state', 'action', 'reward', 'next_state', 'done'}
         infos = {f: getattr(sars, f) for f in fields}
         for worker in range(num_workers):
-            infos['runner_id'] = worker
+            # Populate infos per worker
+            worker_infos = {'runner_id': worker}
+            for key, value in infos.items():
+                worker_infos[key] = value[worker]
+
             # The following attemps to split additional infos. (WIP. Remove ?)
             # infos = {}
             # for f in fields:
@@ -46,7 +51,7 @@ def flatten_episodes(replay, episodes, num_workers):
                                           reward[worker],
                                           next_state[worker],
                                           done[worker],
-                                          **infos,
+                                          **worker_infos,
                                           )
             if bool(done[worker]):
                 flat_replay += worker_replays[worker]
@@ -60,7 +65,6 @@ def flatten_episodes(replay, episodes, num_workers):
 
 
 class Runner(Wrapper):
-
     """
     Runner wrapper.
 
@@ -136,12 +140,29 @@ class Runner(Wrapper):
                         msg = 'get_action should return 1 or 2 values.'
                         raise NotImplementedError(msg)
             old_state = self._current_state
-            state, reward, done, _ = self.env.step(action)
+            state, reward, done, info = self.env.step(action)
             if not self.is_vectorized and done:
                 collected_episodes += 1
                 self._needs_reset = True
             elif self.is_vectorized:
                 collected_episodes += sum(done)
+                # Convert tuple info dictionaries (one per worker) in a single
+                # dictionary with a list of values for each key for each worker
+                # e.g from this
+                # ({key_0: value_0, key_1:value_1}, // worker_0 values
+                #  {key_0: value_0, key_1:value_1}) // worker_1 values
+                # we get this
+                # {key_0: [value_0,  // value of worker 0
+                #          value_0], // value of worker 1
+                #  key_1: [value_1,  // value of worker 0
+                #          value_1], // value of worker 1}
+                tmp_info = defaultdict(list)
+                for info_worker in info:
+                    for key, value in info_worker.items():
+                        # Ignore types that cannot be converted to tensors
+                        if _istensorable(value):
+                            tmp_info[key] += [value]
+                info = tmp_info
             replay.append(old_state, action, reward, state, done, **info)
             self._current_state = state
             if render:
