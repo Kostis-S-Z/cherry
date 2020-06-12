@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from collections import defaultdict
 
 
-def flatten_episodes(replay, episodes, num_workers):
+def flatten_episodes(replay, episodes, num_workers, extra_info=False):
     """
     TODO: This implementation is not efficient.
 
@@ -31,8 +31,12 @@ def flatten_episodes(replay, episodes, num_workers):
         for worker in range(num_workers):
             # Populate infos per worker
             worker_infos = {'runner_id': worker}
-            for key, value in infos.items():
-                worker_infos[key] = value[worker]
+
+            # This slows down the runner!
+            # from 1.15 it/sec we go to 1.25 it/sec
+            if extra_info:
+                for key, value in infos.items():
+                    worker_infos[key] = value[worker]
 
             # The following attemps to split additional infos. (WIP. Remove ?)
             # infos = {}
@@ -91,6 +95,7 @@ class Runner(Wrapper):
             get_action,
             steps=None,
             episodes=None,
+            extra_info=False,
             render=False):
         """
         Runner wrapper's run method.
@@ -112,7 +117,7 @@ class Runner(Wrapper):
         while True:
             if collected_steps >= steps or collected_episodes >= episodes:
                 if self.is_vectorized and collected_episodes >= episodes:
-                    replay = flatten_episodes(replay, episodes, self.num_envs)
+                    replay = flatten_episodes(replay, episodes, self.num_envs, extra_info=extra_info)
                     self._needs_reset = True
                 return replay
             if self._needs_reset:
@@ -156,13 +161,16 @@ class Runner(Wrapper):
                 #          value_0], // value of worker 1
                 #  key_1: [value_1,  // value of worker 0
                 #          value_1], // value of worker 1}
-                tmp_info = defaultdict(list)
-                for info_worker in info:
-                    for key, value in info_worker.items():
-                        # Ignore types that cannot be converted to tensors
-                        if _istensorable(value):
-                            tmp_info[key] += [value]
-                info = tmp_info
+                if extra_info:
+                    tmp_info = defaultdict(list)
+                    for info_worker in info:
+                        for key, value in info_worker.items():
+                            # Ignore types that cannot be converted to tensors
+                            if _istensorable(value):
+                                tmp_info[key] += [value]
+                    info = tmp_info
+                else:
+                    info = {}
             replay.append(old_state, action, reward, state, done, **info)
             self._current_state = state
             if render:
