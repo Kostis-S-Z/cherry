@@ -76,11 +76,12 @@ class Runner(Wrapper):
     environmnents to sample n episodes, and stack them inside a flat replay.
     """
 
-    def __init__(self, env):
+    def __init__(self, env, extra_info=False):
         super(Runner, self).__init__(env)
         self.env = env
         self._needs_reset = True
         self._current_state = None
+        self._extra_info = extra_info
 
     def reset(self, *args, **kwargs):
         self._current_state = self.env.reset(*args, **kwargs)
@@ -95,7 +96,6 @@ class Runner(Wrapper):
             get_action,
             steps=None,
             episodes=None,
-            extra_info=False,
             render=False):
         """
         Runner wrapper's run method.
@@ -117,7 +117,7 @@ class Runner(Wrapper):
         while True:
             if collected_steps >= steps or collected_episodes >= episodes:
                 if self.is_vectorized and collected_episodes >= episodes:
-                    replay = flatten_episodes(replay, episodes, self.num_envs, extra_info=extra_info)
+                    replay = flatten_episodes(replay, episodes, self.num_envs, extra_info=self._extra_info)
                     self._needs_reset = True
                 return replay
             if self._needs_reset:
@@ -161,7 +161,7 @@ class Runner(Wrapper):
                 #          value_0], // value of worker 1
                 #  key_1: [value_1,  // value of worker 0
                 #          value_1], // value of worker 1}
-                if extra_info:
+                if self._extra_info:
                     tmp_info = defaultdict(list)
                     for info_worker in info:
                         for key, value in info_worker.items():
